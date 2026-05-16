@@ -60,6 +60,11 @@ jobs:
           chmod +x $DIY_P2_SH
           cd openwrt
           $GITHUB_WORKSPACE/$DIY_P2_SH
+          
+          # 🔥 降维打击：无论系统怎么变，强制把兆能 M2 架构重新砸进最底部，防止被 x86 覆盖！
+          echo "CONFIG_TARGET_qualcommax=y" >> .config
+          echo "CONFIG_TARGET_qualcommax_ipq60xx=y" >> .config
+          echo "CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_zn_m2=y" >> .config
 
       - name: Download package
         id: package
