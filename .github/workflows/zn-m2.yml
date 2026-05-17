@@ -109,12 +109,16 @@ jobs:
           echo "FIRMWARE=$HOME/firmware_release" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
 
-      - name: Upload firmware directory
-        uses: actions/upload-artifact@main
-        if: steps.organize.outputs.status == 'success' && !cancelled()
-        with:
-          name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-          path: ${{ env.FIRMWARE }}
+      - name: Upload firmware to release
+        if: steps.tag.outputs.status == 'success' && !cancelled()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 🛠️ 不使用任何不兼容的第三方 Node 插件，直接调用 GitHub 官方原生命令行打包工具
+          echo "🚀 使用 GitHub CLI 原生无痛发布..."
+          gh release create "${{ steps.tag.outputs.release_tag }}" ${{ env.FIRMWARE }}/* \
+            --title "ZN-M2 高通满血固件-${{ steps.tag.outputs.release_tag }}" \
+            --notes-file release.txt
 
       - name: Generate release tag
         id: tag
