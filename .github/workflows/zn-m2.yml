@@ -1,4 +1,4 @@
-name: OpenWrt Builder ZN-M2 (24.10-Legacy)
+name: OpenWrt Builder ZN-M2 (Extreme Lock)
 
 on:
   repository_dispatch:
@@ -28,7 +28,6 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          echo "🚀 纯净流初始化"
           sudo timedatectl set-timezone "$TZ"
           sudo mkdir -p /workdir
           sudo chown $USER:$GROUPS /workdir
@@ -36,7 +35,6 @@ jobs:
       - name: Clone source code
         working-directory: /workdir
         run: |
-          df -hT $PWD
           git clone $REPO_URL -b $REPO_BRANCH openwrt
           ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
@@ -47,13 +45,13 @@ jobs:
           cd openwrt
           $GITHUB_WORKSPACE/$DIY_P1_SH
 
-      - name: Update feeds
-        run: cd openwrt && ./scripts/feeds update -a
+      - name: Update & Install feeds
+        run: |
+          cd openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
 
-      - name: Install feeds
-        run: cd openwrt && ./scripts/feeds install -a
-
-      - name: Load custom configuration
+      - name: Execute DIY-Part2 script
         run: |
           [ -e files ] && mv files openwrt/files
           [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
@@ -61,20 +59,31 @@ jobs:
           cd openwrt
           $GITHUB_WORKSPACE/$DIY_P2_SH
 
+      - name: 🛡️ Lock and Audit Configuration (生死安检)
+        run: |
+          cd openwrt
+          echo "==== 开始生成最终配置 ===="
+          make defconfig
+          echo "==== 检查最终配置是否被滑坡篡改 ===="
+          
+          # 检查 1：如果变成了 8devices，立即斩首报错
+          if grep -q "CONFIG_TARGET.*DEVICE_8devices_mango" .config; then
+            echo "❌ 致命错误：系统依然偷偷滑坡成了 8devices_mango！停止编译，防止浪费时间！"
+            exit 1
+          fi
+          
+          # 检查 2：必须明确包含 zn_m2
+          if ! grep -q "CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_zn_m2=y" .config; then
+            echo "❌ 致命错误：配置文件里找不到 zn_m2！机型丢失！停止编译！"
+            exit 1
+          fi
+          
+          echo "✅ 安检通过：配置已完全死锁在 ZN-M2！开始安全下载组件..."
+
       - name: Download package
         id: package
         run: |
           cd openwrt
-          # 必须单线程稳定补全配置，防止多线程竞争导致偏航
-          make defconfig
-          
-          # 🛡️ 生死安检拦截
-          if ! grep -q "CONFIG_TARGET_qualcommax=y" .config; then
-            echo "❌ 严重错误：系统未识别到高通架构！"
-            exit 1
-          fi
-          
-          echo "✅ 架构锁定成功：高通 IPQ6000 兆能 M2 赛道！"
           make download -j8
           find dl -size -1024c -exec ls -l {} \;
           find dl -size -1024c -exec rm -f {} \;
@@ -90,38 +99,18 @@ jobs:
           [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
           echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
 
-      - name: Check space usage
-        if: steps.compile.outputs.status == 'success' && !cancelled()
-        run: df -hT
-
-      - name: Upload bin directory
-        uses: actions/upload-artifact@v4
-        if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
-        with:
-          name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-          path: openwrt/bin
-
       - name: Organize files
         id: organize
         if: steps.compile.outputs.status == 'success' && env.UPLOAD_FIRMWARE == 'true' && !cancelled()
         run: |
           cd openwrt/bin/targets/*/*
-          
-          # 1. 🛡️ 【清理杂质】物理超度编译目录里混进来的 8devices 组件和所有的清单说明文件
+          rm -rf packages
+          # 终极物理拦截：扬掉所有不是 zn_m2 和 bin/squashfs 的文件
           find ./ -type f -name "*8devices*" -exec rm -f {} \;
           find ./ -type f -name "*.manifest" -exec rm -f {} \;
-          find ./ -type f -name "*.json" -exec rm -f {} \;
           find ./ -type f -name "*.buildinfo" -exec rm -f {} \;
           find ./ -type f -name "*.sha256sums" -exec rm -f {} \;
-          
-          # 2. 彻底移除无用的大体积软件包目录
-          rm -rf packages
-          
-          # 3. 🛡️ 【安全护航】如果检查到目录里连 zn_m2 的文件影子都没有，说明配置被吃，直接触发熔断报错
-          if ! find ./ -type f \( -name "*zn_m2*" -o -name "*sysupgrade.bin" \) | grep -q .; then
-            echo "❌ 严重警告：未检测到纯正的 ZN-M2 固件产物，拒绝分发！"
-            exit 1
-          fi
+          find ./ -type f -name "*.json" -exec rm -f {} \;
           
           echo "FIRMWARE=$PWD" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
@@ -133,20 +122,11 @@ jobs:
           name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
           path: ${{ env.FIRMWARE }}
 
-      - name: Generate release tag
-        id: tag
-        if: steps.organize.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true' && !cancelled()
-        run: |
-          echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
-          touch release.txt
-          echo "status=success" >> $GITHUB_OUTPUT
-
       - name: Upload firmware to release
         uses: softprops/action-gh-release@v2
-        if: steps.tag.outputs.status == 'success' && !cancelled()
+        if: steps.organize.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true' && !cancelled()
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ steps.tag.outputs.release_tag }}
-          body_path: release.txt
+          tag_name: ${{ env.FILE_DATE }}
           files: ${{ env.FIRMWARE }}/*
