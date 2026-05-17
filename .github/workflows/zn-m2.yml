@@ -15,6 +15,7 @@ env:
   UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true  # 🛠️ 强行开启 Node 24 模式，阻止旧版 Node 插件触发底层 Bug
 
 jobs:
   build:
@@ -96,9 +97,16 @@ jobs:
         id: organize
         if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
         run: |
+          # 1. 在完全隔离的用户家目录下创建一个干净的临时打包夹
+          mkdir -p $HOME/firmware_release
+          
+          # 2. 只把编译出来的 bin/targets 下的固件复制过去，断绝与根目录的任何联系
           cd openwrt/bin/targets/*/*
           rm -rf packages
-          echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+          cp -r ./* $HOME/firmware_release/
+          
+          # 3. 把打包路径死锁在用户夹内，让 Node.js 插件无权也无需去扫描系统根目录
+          echo "FIRMWARE=$HOME/firmware_release" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
 
       - name: Upload firmware directory
