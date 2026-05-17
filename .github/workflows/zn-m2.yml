@@ -28,7 +28,9 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          echo "Bypassing cleanup"
+          # 🛠️ 彻底不碰任何 /swapfile 和底层清理，确保系统默认权限百分之百纯净完整
+          echo "Using clean environment without touching system swap"
+          
           sudo timedatectl set-timezone "$TZ"
           sudo mkdir -p /workdir
           sudo chown $USER:$GROUPS /workdir
