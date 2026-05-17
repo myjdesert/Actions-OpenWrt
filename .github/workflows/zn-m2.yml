@@ -106,11 +106,22 @@ jobs:
         if: steps.compile.outputs.status == 'success' && env.UPLOAD_FIRMWARE == 'true' && !cancelled()
         run: |
           cd openwrt/bin/targets/*/*
-          # 移除非必要大体积包
+          
+          # 1. 🛡️ 【清理杂质】物理超度编译目录里混进来的 8devices 组件和所有的清单说明文件
+          find ./ -type f -name "*8devices*" -exec rm -f {} \;
+          find ./ -type f -name "*.manifest" -exec rm -f {} \;
+          find ./ -type f -name "*.json" -exec rm -f {} \;
+          find ./ -type f -name "*.buildinfo" -exec rm -f {} \;
+          find ./ -type f -name "*.sha256sums" -exec rm -f {} \;
+          
+          # 2. 彻底移除无用的大体积软件包目录
           rm -rf packages
           
-          # 🔍 核心过滤：彻底把不需要的 .itb 文件删掉，只留下传统 U-Boot 认识的 .bin/squashfs
-          find ./ -type f -name "*.itb" -exec rm -f {} \;
+          # 3. 🛡️ 【安全护航】如果检查到目录里连 zn_m2 的文件影子都没有，说明配置被吃，直接触发熔断报错
+          if ! find ./ -type f \( -name "*zn_m2*" -o -name "*sysupgrade.bin" \) | grep -q .; then
+            echo "❌ 严重警告：未检测到纯正的 ZN-M2 固件产物，拒绝分发！"
+            exit 1
+          fi
           
           echo "FIRMWARE=$PWD" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
