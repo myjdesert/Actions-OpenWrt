@@ -1,4 +1,4 @@
-name: OpenWrt Builder ZN-M2 (24.10)
+name: OpenWrt Builder ZN-M2 (24.10-Legacy)
 
 on:
   repository_dispatch:
@@ -28,7 +28,7 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          echo "🚀 纯净流初始化，不碰任何系统分区"
+          echo "🚀 纯净流初始化"
           sudo timedatectl set-timezone "$TZ"
           sudo mkdir -p /workdir
           sudo chown $USER:$GROUPS /workdir
@@ -65,16 +65,16 @@ jobs:
         id: package
         run: |
           cd openwrt
+          # 必须单线程稳定补全配置，防止多线程竞争导致偏航
           make defconfig
           
-          # 🔍 生死安检拦截：检查补全后系统到底认不认高通架构
+          # 🛡️ 生死安检拦截
           if ! grep -q "CONFIG_TARGET_qualcommax=y" .config; then
-            echo "❌ 严重错误：系统又把高通架构吞了！拒绝编译错误的 x86 固件！"
+            echo "❌ 严重错误：系统未识别到高通架构！"
             exit 1
           fi
           
-          echo "✅ 架构锁定成功：当前已铁定进入高通 IPQ6000 兆能 M2 赛道！"
-          make defconfig
+          echo "✅ 架构锁定成功：高通 IPQ6000 兆能 M2 赛道！"
           make download -j8
           find dl -size -1024c -exec ls -l {} \;
           find dl -size -1024c -exec rm -f {} \;
@@ -106,7 +106,12 @@ jobs:
         if: steps.compile.outputs.status == 'success' && env.UPLOAD_FIRMWARE == 'true' && !cancelled()
         run: |
           cd openwrt/bin/targets/*/*
+          # 移除非必要大体积包
           rm -rf packages
+          
+          # 🔍 核心过滤：彻底把不需要的 .itb 文件删掉，只留下传统 U-Boot 认识的 .bin/squashfs
+          find ./ -type f -name "*.itb" -exec rm -f {} \;
+          
           echo "FIRMWARE=$PWD" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
 
