@@ -95,19 +95,37 @@ jobs:
 
       - name: Organize files
         id: organize
-        if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+        if: steps.compile.outputs.status == 'success' && env.UPLOAD_FIRMWARE == 'true'
         run: |
-          # 1. 在完全隔离的用户家目录下创建一个干净的临时打包夹
-          mkdir -p $HOME/firmware_release
-          
-          # 2. 只把编译出来的 bin/targets 下的固件复制过去，断绝与根目录的任何联系
           cd openwrt/bin/targets/*/*
           rm -rf packages
-          cp -r ./* $HOME/firmware_release/
-          
-          # 3. 把打包路径死锁在用户夹内，让 Node.js 插件无权也无需去扫描系统根目录
-          echo "FIRMWARE=$HOME/firmware_release" >> $GITHUB_ENV
+          echo "FIRMWARE=$PWD" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
+
+      - name: Upload firmware directory
+        uses: actions/upload-artifact@main
+        if: steps.organize.outputs.status == 'success'
+        with:
+          name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+          path: ${{ env.FIRMWARE }}
+
+      - name: Generate release tag
+        id: tag
+        if: env.UPLOAD_RELEASE == 'true' && steps.organize.outputs.status == 'success'
+        run: |
+          echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
+          touch release.txt
+          echo "status=success" >> $GITHUB_OUTPUT
+
+      - name: Upload firmware to release
+        uses: softprops/action-gh-release@v2
+        if: steps.tag.outputs.status == 'success'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.tag.outputs.release_tag }}
+          body_path: release.txt
+          files: ${{ env.FIRMWARE }}/*
 
       - name: Upload firmware to release
         if: steps.tag.outputs.status == 'success' && !cancelled()
